@@ -30,7 +30,7 @@ CompanyName = 'Unknown'
 Copyright = '(c) mikethomp. All rights reserved.'
 
 # Description of the functionality provided by this module
-Description = 'An unofficial module with a collection of Jellyfin API functions'
+Description = 'Unofficial PowerShell module for interacting with the Jellyfin API'
 
 # Minimum version of the PowerShell engine required by this module
 # PowerShellVersion = ''
