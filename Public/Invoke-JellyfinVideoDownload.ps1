@@ -126,74 +126,81 @@ function Invoke-JellyfinVideoDownload {
         Remove-Item $LocalPlaylist -Force
     }
     
-    # Download the playlist segments
-    try {
-        foreach ($line in ($PlayList -split "`n")) {
-            $FileName = $null
-            if ($line -match '#EXT-X-MAP:URI="(.+)"') {
-                # Media Initialization Section
-                $XMap = $matches[1]
-                $SegmentUri = "https://$($JellyfinHost)/videos/$($VideoUUID)/$($XMap)"
-                Write-Verbose $SegmentUri
-                $FileName = "$($OutputDirectoryObject.FullName)/$($VideoId)-$(([uri]$SegmentUri).AbsolutePath | Split-Path -Leaf)"
-                Write-Verbose $FileName
-                "#EXT-X-MAP:URI=`"$($FileName)`"" | Out-File $LocalPlaylist -Append
-                if (!(Test-Path $FileName)) {
-                    foreach ($try in (1..5)) {
-                        try {
-                            Invoke-WebRequest $SegmentUri -OutFile $FileName -SkipCertificateCheck:$SkipCertificateCheck
-                            break
-                        } catch {
-                            if ($try -ge 5) {
-                                throw $_.Exception.Message
-                            } else {
-                                Write-Warning $_.Exception.Message
-                                Write-Warning "Sleeping..."
-                                Start-Sleep -Seconds 10
-                            }
-                        }
-                    }
-                }
-            } elseif ($line -match "^hls1/main/\d+.mp4") {
-                # Video Segment
-                $SegmentUri = "https://$($JellyfinHost)/videos/$($VideoUUID)/$($line)"
-                Write-Verbose $SegmentUri
-                $FileName = "$($OutputDirectoryObject.FullName)/$($VideoId)-$(([uri]$SegmentUri).AbsolutePath | Split-Path -Leaf)"
-                Write-Verbose $FileName
-                $FileName | Out-File $LocalPlaylist -Append
-                if (!(Test-Path $FileName)) {
-                    foreach ($try in (1..5)) {
-                        try {
-                            Invoke-WebRequest $SegmentUri -OutFile $FileName -SkipCertificateCheck:$SkipCertificateCheck
-                            break
-                        } catch {
-                            if ($try -ge 5) {
-                                throw $_.Exception.Message
-                            } else {
-                                Write-Warning $_.Exception.Message
-                                Write-Warning "Sleeping..."
-                                Start-Sleep -Seconds 10
-                            }
-                        }
-                    }
-                }
-            } elseif ($line -match '^#') {
-                # All other m3u8 notations
-                $line | Out-File $LocalPlaylist -Append
+    # Create the local m3u8 file and collect all the URIs
+    $Segments = @()
+    foreach ($line in ($PlayList -split "`n")) {
+        $FileName = $null
+        if ($line -match '#EXT-X-MAP:URI="(.+)"') {
+            # Media Initialization Section
+            $XMap = $matches[1]
+            $SegmentUri = "https://$($JellyfinHost)/videos/$($VideoUUID)/$($XMap)"
+            Write-Verbose $SegmentUri
+            $FileName = "$($OutputDirectoryObject.FullName)/$($VideoId)-$(([uri]$SegmentUri).AbsolutePath | Split-Path -Leaf)"
+            Write-Verbose $FileName
+            $Segments += [PSCustomObject]@{
+                SegmentUri = $SegmentUri
+                FileName = $FileName
             }
+            "#EXT-X-MAP:URI=`"$($FileName)`"" | Out-File $LocalPlaylist -Append
+        } elseif ($line -match "^hls1/main/\d+.mp4") {
+            # Video Segment
+            $SegmentUri = "https://$($JellyfinHost)/videos/$($VideoUUID)/$($line)"
+            Write-Verbose $SegmentUri
+            $FileName = "$($OutputDirectoryObject.FullName)/$($VideoId)-$(([uri]$SegmentUri).AbsolutePath | Split-Path -Leaf)"
+            Write-Verbose $FileName
+            $Segments += [PSCustomObject]@{
+                SegmentUri = $SegmentUri
+                FileName = $FileName
+            }
+            $FileName | Out-File $LocalPlaylist -Append
+        } elseif ($line -match '^#') {
+            # All other m3u8 notations
+            $line | Out-File $LocalPlaylist -Append
         }
-    } catch {
-        if ($FileName -and (Test-Path $FileName)) {
-            Remove-Item $FileName -Force
-        }
-        throw $_.Exception.Message
     }
 
-    # Merge the segments
-    $Output = "$($OutputDirectoryObject.FullName)/$($VideoId).mp4"
-    ffmpeg -y -protocol_whitelist file, crypto, tcp, http, https, tls -i $LocalPlaylist -c copy $Output 
-        
-    $OutputObject = Get-Item $Output
+    # Download the playlist segments
+    if ($Segments) {
+        try {
+            $SegmentNumber = 1
+            foreach ($Segment in $Segments) {
+                Write-Progress -Activity "Downloading $($VideoId).mp4" `
+                    -Status "Segment $($SegmentNumber) of $($Segments.Count)" `
+                    -PercentComplete ([int](($SegmentNumber/$Segments.Count) * 100))
+
+                if (!(Test-Path $Segment.FileName)) {
+                    foreach ($try in (1..5)) {
+                        try {
+                            Invoke-WebRequest $Segment.SegmentUri -OutFile $Segment.FileName -SkipCertificateCheck:$SkipCertificateCheck
+                            break
+                        } catch {
+                            if ($try -ge 5) {
+                                throw $_.Exception.Message
+                            } else {
+                                Write-Warning $_.Exception.Message
+                                Write-Warning "Sleeping..."
+                                Start-Sleep -Seconds 10
+                            }
+                        }
+                    }
+                }
+                $SegmentNumber += 1
+            }
+            Write-Progress -Activity "Downloading $($VideoId).mp4" -Completed
+        } catch {
+            Write-Progress -Activity "Downloading $($VideoId).mp4" -Completed -ErrorAction SilentlyContinue
+            if ($FileName -and (Test-Path $FileName)) {
+                Remove-Item $FileName -Force
+            }
+            throw $_.Exception.Message
+        }
+
+        # Merge the segments
+        $Output = "$($OutputDirectoryObject.FullName)/$($VideoId).mp4"
+        ffmpeg -y -protocol_whitelist file,crypto,tcp,http,https,tls -i $LocalPlaylist -c copy $Output 
+            
+        $OutputObject = Get-Item $Output
+    }
 
     # Cleanup
     if (Test-Path $LocalPlaylist) {
@@ -203,6 +210,10 @@ function Invoke-JellyfinVideoDownload {
         $_.Name -ne $OutputObject.Name
     } | ForEach-Object { Remove-Item $_ -Force }
 
-    return $OutputObject
+    if ($Segments) {
+        return $OutputObject
+    } else {
+        throw "Could not find any segments to download"
+    }
 
 }
