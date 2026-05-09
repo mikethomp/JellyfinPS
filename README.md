@@ -24,6 +24,7 @@ It abstracts common API operations into simple PowerShell commands, making it ea
 ### Manual Install
 
 ```powershell
+apt install ffmpeg
 git clone https://github.com/mikethomp/JellyfinPS.git
 ```
 
