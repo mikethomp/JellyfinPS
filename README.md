@@ -13,6 +13,7 @@ It abstracts common API operations into simple PowerShell commands, making it ea
 ## 📋 Requirements
 
 * PowerShell 7+
+* [FFmpeg](https://www.ffmpeg.org) - Needed for video manipulation
 * A running Jellyfin server
 * A valid Jellyfin API key
 
@@ -29,9 +30,6 @@ git clone https://github.com/mikethomp/JellyfinPS.git
 Copy the module folder into your PowerShell modules directory:
 
 ```powershell
-# Windows
-$HOME\Documents\PowerShell\Modules\
-# Linux
 ~/.local/share/powershell/Modules/
 ```
 
@@ -56,6 +54,7 @@ All functions require:
 
 * `-SkipCertificateCheck` is available for self-signed certificates but should be avoided in production.
 * Host formatting is expected as `hostname:port`.
+* This module has been tested on Ubuntu Linux.
 
 ---
 
