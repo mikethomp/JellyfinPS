@@ -174,6 +174,7 @@ function Invoke-JellyfinVideoDownload {
                         try {
                             $ProgressPreference = 'SilentlyContinue'
                             Invoke-WebRequest $Segment.SegmentUri -OutFile $Segment.FileName -SkipCertificateCheck:$SkipCertificateCheck
+                            $ProgressPreference = $PreviousProgressPreference
                             break
                         } catch {
                             $ProgressPreference = $PreviousProgressPreference
