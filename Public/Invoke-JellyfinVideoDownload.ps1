@@ -170,10 +170,13 @@ function Invoke-JellyfinVideoDownload {
 
                 if (!(Test-Path $Segment.FileName)) {
                     foreach ($try in (1..5)) {
+                        $PreviousProgressPreference = $ProgressPreference
                         try {
+                            $ProgressPreference = 'SilentlyContinue'
                             Invoke-WebRequest $Segment.SegmentUri -OutFile $Segment.FileName -SkipCertificateCheck:$SkipCertificateCheck
                             break
                         } catch {
+                            $ProgressPreference = $PreviousProgressPreference
                             if ($try -ge 5) {
                                 throw $_.Exception.Message
                             } else {
@@ -182,6 +185,7 @@ function Invoke-JellyfinVideoDownload {
                                 Start-Sleep -Seconds 10
                             }
                         }
+                        $ProgressPreference = $PreviousProgressPreference
                     }
                 }
                 $SegmentNumber += 1
